@@ -15417,7 +15417,9 @@ function obterPavimentosDoEndereco(endereco) {
 }
 
 function registroParaBanco(r) {
-    const pav = obterPavimentosDoEndereco(r.rua || "");
+    // Envia somente as colunas existentes no cadastro da tabela ordens_servico.
+    // Os dados de pavimentação pertencem às vias e não precisam ser gravados
+    // na OS para que o cadastro seja salvo.
     return {
         os: String(r.os || "").trim(),
         oficio: r.oficio || "",
@@ -15433,13 +15435,7 @@ function registroParaBanco(r) {
         equipamento: r.equipamento || "",
         inicio: r.inicio || null,
         fim: r.fim || null,
-        descricao: r.descricao || "",
-        terra: pav.terra || 0,
-        bloquete: pav.bloquete || 0,
-        paralelepipedo: pav.paralelepipedo || 0,
-        asfalto: pav.asfalto || 0,
-        total_pavimento: pav.total || 0,
-        quantidade_tipos_pavimento: pav.quantidadeTipos || 0
+        descricao: r.descricao || ""
     };
 }
 

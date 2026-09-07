@@ -2,8 +2,6 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="Cadastro online de Ordens de Serviço da Zeladoria">
 <title>Ordem de Serviço - Zeladoria</title>
 
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
@@ -17,27 +15,6 @@ body{
     font-family:'Montserrat',sans-serif;
     margin:0;
     background:#eee;
-}
-.github-nav{
-    width:190mm;
-    margin:12px auto;
-    display:flex;
-    gap:8px;
-    justify-content:flex-end;
-}
-.github-nav a{
-    text-decoration:none;
-    padding:7px 11px;
-    border-radius:7px;
-    background:#173d2b;
-    color:#fff;
-    font-size:11px;
-    font-weight:700;
-}
-.github-nav a.ativo{background:#21633f;}
-@media(max-width:800px){
-    .github-nav{width:auto;margin:10px 14px;justify-content:flex-start;flex-wrap:wrap;}
-    .folha,.acoes,.tabela-container{width:auto;margin-left:14px;margin-right:14px;}
 }
 
 .folha{ width:190mm; margin:auto; }
@@ -141,6 +118,28 @@ textarea{ resize:none; }
     padding:4px;
 }
 
+/* NAVEGAÇÃO GITHUB PAGES */
+.github-nav{
+    width:190mm;
+    margin:8px auto;
+    display:flex;
+    justify-content:flex-end;
+    gap:6px;
+}
+.github-nav a{
+    display:inline-block;
+    padding:7px 11px;
+    background:#123b5d;
+    color:#fff;
+    text-decoration:none;
+    border-radius:4px;
+    font-size:11px;
+    font-weight:600;
+}
+@media(max-width:800px){
+    .github-nav,.acoes,.tabela-container,.folha{width:calc(100% - 20px);}
+}
+
 /* PRINT */
 @media print{
     body{background:#fff;}
@@ -149,10 +148,9 @@ textarea{ resize:none; }
 </head>
 
 <body>
-
 <div class="github-nav">
     <a href="index.html">📊 Dashboard</a>
-    <a href="cadastro.html" class="ativo">📝 Cadastro de OS</a>
+    <a href="cadastro.html">📝 Cadastro de OS</a>
 </div>
 
 <div class="folha">
@@ -160,8 +158,7 @@ textarea{ resize:none; }
 <div class="container">
 
 <div class="header">
-    <img src="logo zeladoria.png" class="logo" alt="Zeladoria"
-         onerror="this.style.display='none';">
+    <img src="logo zeladoria.png" class="logo">
 </div>
 
 <div class="grid">
@@ -15365,61 +15362,8 @@ async function apiBanco(endpoint, options = {}) {
     return dados;
 }
 
-function valorNumerico(valor) {
-    if (valor === null || valor === undefined || valor === "") return 0;
-    const texto = String(valor).trim().replace(/\./g, "").replace(",", ".");
-    const numero = Number(texto);
-    return Number.isFinite(numero) ? numero : 0;
-}
-
-function obterPavimentosDoEndereco(endereco) {
-    const enderecoNormalizado = normalizar(endereco);
-    let rua = ruaSelecionada;
-
-    if (!rua || normalizar(montarEndereco(rua)) !== enderecoNormalizado) {
-        rua = ruas.find(r => normalizar(montarEndereco(r)) === enderecoNormalizado);
-    }
-
-    if (!rua) {
-        rua = ruas.find(r => {
-            const completo = normalizar(montarEndereco(r));
-            return completo && (enderecoNormalizado.includes(completo) || completo.includes(enderecoNormalizado));
-        });
-    }
-
-    if (!rua) {
-        return {
-            terra: 0,
-            bloquete: 0,
-            paralelepipedo: 0,
-            asfalto: 0,
-            total: 0,
-            quantidadeTipos: 0
-        };
-    }
-
-    const terra = valorNumerico(rua.TERRA);
-    const bloquete = valorNumerico(rua.BLOQUETE);
-    const paralelepipedo = valorNumerico(rua.PARALELEPÍPEDO);
-    const asfalto = valorNumerico(rua.ASFALTO);
-    const valores = [terra, bloquete, paralelepipedo, asfalto];
-    const quantidadeTipos = valores.filter(v => v > 0).length;
-    const soma = valores.reduce((a, b) => a + b, 0);
-
-    return {
-        terra,
-        bloquete,
-        paralelepipedo,
-        asfalto,
-        total: quantidadeTipos > 1 ? soma : 0,
-        quantidadeTipos
-    };
-}
-
 function registroParaBanco(r) {
-    // Envia somente as colunas existentes no cadastro da tabela ordens_servico.
-    // Os dados de pavimentação pertencem às vias e não precisam ser gravados
-    // na OS para que o cadastro seja salvo.
+    const pav = obterPavimentosDoEndereco(r.rua || "");
     return {
         os: String(r.os || "").trim(),
         oficio: r.oficio || "",
@@ -15435,7 +15379,13 @@ function registroParaBanco(r) {
         equipamento: r.equipamento || "",
         inicio: r.inicio || null,
         fim: r.fim || null,
-        descricao: r.descricao || ""
+        descricao: r.descricao || "",
+        terra: pav.terra || 0,
+        bloquete: pav.bloquete || 0,
+        paralelepipedo: pav.paralelepipedo || 0,
+        asfalto: pav.asfalto || 0,
+        total_pavimento: pav.total || 0,
+        quantidade_tipos_pavimento: pav.quantidadeTipos || 0
     };
 }
 
@@ -15477,6 +15427,23 @@ async function carregarRegistros(silencioso = false) {
     }
 }
 
+// =========================
+ // PRÓXIMA OS AUTOMÁTICA
+ // =========================
+ async function prepararProximaOS() {
+     try {
+         const dados = await apiBanco("ordens_servico?select=os");
+         const numeros = (Array.isArray(dados) ? dados : [])
+             .map(r => parseInt(String(r.os ?? "").replace(/\D/g, ""), 10))
+             .filter(Number.isFinite);
+         const proxima = numeros.length ? Math.max(...numeros) + 1 : 1;
+         if (!editandoId) campoOS.value = String(proxima);
+     } catch (erro) {
+         console.error("Não foi possível calcular a próxima OS:", erro);
+         if (!editandoId) campoOS.value = "";
+     }
+ }
+
 // REFERÊNCIAS DOS CAMPOS
 const campoOS = document.getElementById("os");
 const campoOficio = document.getElementById("oficio");
@@ -15513,22 +15480,12 @@ function lerFormulario() {
 }
 
 async function salvar() {
-    const dado = lerFormulario();
-    if (!dado.tipo) { alert("Selecione o Tipo de Serviço."); campoTipo.focus(); return; }
-
     if (!editandoId) {
-        try {
-            const existentes = await apiBanco("ordens_servico?select=os&order=os.desc&limit=1000");
-            const numeros = (Array.isArray(existentes) ? existentes : [])
-                .map(r => Number(String(r.os ?? "").replace(/[^0-9]/g, "")))
-                .filter(Number.isFinite);
-            dado.os = String(numeros.length ? Math.max(...numeros) + 1 : 1);
-            campoOS.value = dado.os;
-        } catch (erro) {
-            alert("Não foi possível gerar o próximo número da OS.\n\n" + erro.message);
-            return;
-        }
+        await prepararProximaOS();
     }
+    const dado = lerFormulario();
+    if (!dado.os) { alert("Não foi possível gerar o Nº da OS. Verifique a conexão com o banco."); campoOS.focus(); return; }
+    if (!dado.tipo) { alert("Selecione o Tipo de Serviço."); campoTipo.focus(); return; }
 
     try {
         const payload = registroParaBanco(dado);
@@ -15631,6 +15588,7 @@ function limparFormulario() {
     editandoId = null;
     const botao = document.querySelector('button[onclick="salvar()"]');
     if (botao) botao.textContent = "Salvar";
+    prepararProximaOS();
 }
 
 // Se clicar em salvar enquanto estiver editando, transforma o botão em atualização.
@@ -15654,20 +15612,6 @@ async function salvarComEdicao() {
 }
 window.salvar = salvarComEdicao;
 
-async function prepararProximaOS() {
-    if (editandoId) return;
-    try {
-        const existentes = await apiBanco("ordens_servico?select=os&order=os.desc&limit=1000");
-        const numeros = (Array.isArray(existentes) ? existentes : [])
-            .map(r => Number(String(r.os ?? "").replace(/[^0-9]/g, "")))
-            .filter(Number.isFinite);
-        campoOS.value = String(numeros.length ? Math.max(...numeros) + 1 : 1);
-    } catch (erro) {
-        campoOS.value = "";
-        console.warn("Não foi possível calcular a próxima OS:", erro);
-    }
-}
-
 // STATUS DO BANCO
 const areaAcoes = document.querySelector(".acoes");
 if (areaAcoes) {
@@ -15678,8 +15622,52 @@ if (areaAcoes) {
     areaAcoes.appendChild(status);
 }
 
+// EXPORTAR EXCEL
+function valorNumerico(valor) {
+    if (valor === null || valor === undefined || valor === "") return 0;
+    const texto = String(valor).trim().replace(/\./g, "").replace(",", ".");
+    const numero = Number(texto);
+    return Number.isFinite(numero) ? numero : 0;
+}
 
-// Carrega o banco ao abrir. Os HTMLs podem continuar somente no laptop.
+function formatarMetragem(valor) {
+    if (!valor) return "";
+    return Number.isInteger(valor)
+        ? String(valor)
+        : String(Number(valor.toFixed(2))).replace(".", ",");
+}
+
+function obterPavimentosDoEndereco(endereco) {
+    const enderecoNormalizado = normalizar(endereco);
+    let rua = ruaSelecionada;
+
+    if (!rua || normalizar(montarEndereco(rua)) !== enderecoNormalizado) {
+        rua = ruas.find(r => normalizar(montarEndereco(r)) === enderecoNormalizado);
+    }
+    if (!rua) {
+        rua = ruas.find(r => {
+            const completo = normalizar(montarEndereco(r));
+            return completo && (enderecoNormalizado.includes(completo) || completo.includes(enderecoNormalizado));
+        });
+    }
+    if (!rua) return {terra:0,bloquete:0,paralelepipedo:0,asfalto:0,total:0,quantidadeTipos:0};
+
+    const terra = valorNumerico(rua.TERRA);
+    const bloquete = valorNumerico(rua.BLOQUETE);
+    const paralelepipedo = valorNumerico(rua.PARALELEPÍPEDO);
+    const asfalto = valorNumerico(rua.ASFALTO);
+    const valores = [terra,bloquete,paralelepipedo,asfalto];
+    const quantidadeTipos = valores.filter(v => v > 0).length;
+    const soma = valores.reduce((a,b) => a+b,0);
+
+    return {
+        terra,bloquete,paralelepipedo,asfalto,
+        total: quantidadeTipos > 1 ? soma : 0,
+        quantidadeTipos
+    };
+}
+
+// Carrega o banco ao abrir no GitHub Pages.
 carregarRegistros().then(() => prepararProximaOS());
 setInterval(() => carregarRegistros(true), 10000);
 </script>

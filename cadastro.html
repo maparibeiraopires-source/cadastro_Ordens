@@ -15365,6 +15365,57 @@ async function apiBanco(endpoint, options = {}) {
     return dados;
 }
 
+function valorNumerico(valor) {
+    if (valor === null || valor === undefined || valor === "") return 0;
+    const texto = String(valor).trim().replace(/\./g, "").replace(",", ".");
+    const numero = Number(texto);
+    return Number.isFinite(numero) ? numero : 0;
+}
+
+function obterPavimentosDoEndereco(endereco) {
+    const enderecoNormalizado = normalizar(endereco);
+    let rua = ruaSelecionada;
+
+    if (!rua || normalizar(montarEndereco(rua)) !== enderecoNormalizado) {
+        rua = ruas.find(r => normalizar(montarEndereco(r)) === enderecoNormalizado);
+    }
+
+    if (!rua) {
+        rua = ruas.find(r => {
+            const completo = normalizar(montarEndereco(r));
+            return completo && (enderecoNormalizado.includes(completo) || completo.includes(enderecoNormalizado));
+        });
+    }
+
+    if (!rua) {
+        return {
+            terra: 0,
+            bloquete: 0,
+            paralelepipedo: 0,
+            asfalto: 0,
+            total: 0,
+            quantidadeTipos: 0
+        };
+    }
+
+    const terra = valorNumerico(rua.TERRA);
+    const bloquete = valorNumerico(rua.BLOQUETE);
+    const paralelepipedo = valorNumerico(rua.PARALELEPÍPEDO);
+    const asfalto = valorNumerico(rua.ASFALTO);
+    const valores = [terra, bloquete, paralelepipedo, asfalto];
+    const quantidadeTipos = valores.filter(v => v > 0).length;
+    const soma = valores.reduce((a, b) => a + b, 0);
+
+    return {
+        terra,
+        bloquete,
+        paralelepipedo,
+        asfalto,
+        total: quantidadeTipos > 1 ? soma : 0,
+        quantidadeTipos
+    };
+}
+
 function registroParaBanco(r) {
     const pav = obterPavimentosDoEndereco(r.rua || "");
     return {

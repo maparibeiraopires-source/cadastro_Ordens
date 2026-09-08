@@ -15368,8 +15368,40 @@ async function apiBanco(endpoint, options = {}) {
     }
 }
 
+function numeroBanco(valor) {
+    if (valor === null || valor === undefined || valor === "") return 0;
+
+    if (typeof valor === "number") {
+        return Number.isFinite(valor) ? valor : 0;
+    }
+
+    let s = String(valor).trim();
+    if (!s) return 0;
+
+    s = s.replace(/\s/g, "");
+
+    if (s.includes(",") && s.includes(".")) {
+        s = s.replace(/\./g, "").replace(",", ".");
+    } else if (s.includes(",")) {
+        s = s.replace(",", ".");
+    }
+
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+}
+
 function registroParaBanco(r) {
-    const pav = obterPavimentosDoEndereco(r.rua || "");
+    const pav = calcularPavimento(r.rua);
+
+    const terra = numeroBanco(pav?.terra);
+    const bloquete = numeroBanco(pav?.bloquete);
+    const paralelepipedo = numeroBanco(pav?.paralelepipedo);
+    const asfalto = numeroBanco(pav?.asfalto);
+
+    const valoresPavimento = [terra, bloquete, paralelepipedo, asfalto];
+    const totalPavimento = valoresPavimento.reduce((soma, valor) => soma + valor, 0);
+    const quantidadeTiposPavimento = valoresPavimento.filter(valor => valor > 0).length;
+
     return {
         os: String(r.os || "").trim(),
         oficio: r.oficio || "",
@@ -15386,12 +15418,12 @@ function registroParaBanco(r) {
         inicio: r.inicio || null,
         fim: r.fim || null,
         descricao: r.descricao || "",
-        terra: pav.terra || 0,
-        bloquete: pav.bloquete || 0,
-        paralelepipedo: pav.paralelepipedo || 0,
-        asfalto: pav.asfalto || 0,
-        total_pavimento: pav.total || 0,
-        quantidade_tipos_pavimento: pav.quantidadeTipos || 0
+        terra: terra,
+        bloquete: bloquete,
+        paralelepipedo: paralelepipedo,
+        asfalto: asfalto,
+        total_pavimento: numeroBanco(totalPavimento),
+        quantidade_tipos_pavimento: quantidadeTiposPavimento
     };
 }
 

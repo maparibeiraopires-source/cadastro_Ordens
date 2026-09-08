@@ -276,10 +276,10 @@ textarea{ resize:none; }
 
 <!-- BOTÕES -->
 <div class="acoes">
-    <button onclick="salvar()">Salvar</button>
-     <button onclick="limparFormulario()">Limpar</button>
-    <button onclick="apagarUltimo()">Apagar Último</button>
-    <button onclick="exportarExcel()">Exportar Excel</button>
+    <button type="button" onclick="salvar()">Salvar</button>
+     <button type="button" onclick="limparFormulario()">Limpar</button>
+    <button type="button" onclick="apagarUltimo()">Apagar Último</button>
+    <button type="button" onclick="exportarExcel()">Exportar Excel</button>
 </div>
 
 <!-- TABELA -->
@@ -15316,25 +15316,56 @@ let editandoId = null;
 function headersBanco() {
     return {
         "apikey": SUPABASE_PUBLISHABLE_KEY,
-        // A chave publishable já é enviada no header apikey.
         "Content-Type": "application/json",
+        "Accept": "application/json",
         "Prefer": "return=representation"
     };
 }
 
 async function apiBanco(endpoint, options = {}) {
-    const resposta = await fetch(`${SUPABASE_URL}/rest/v1/${endpoint}`, {
-        ...options,
-        headers: { ...headersBanco(), ...(options.headers || {}) }
-    });
-    const texto = await resposta.text();
-    let dados = null;
-    try { dados = texto ? JSON.parse(texto) : null; } catch (_) {}
-    if (!resposta.ok) {
-        const msg = dados?.message || dados?.error_description || dados?.hint || texto || `HTTP ${resposta.status}`;
-        throw new Error(msg);
+    const url = `${SUPABASE_URL}/rest/v1/${endpoint}`;
+
+    try {
+        const resposta = await fetch(url, {
+            ...options,
+            mode: "cors",
+            credentials: "omit",
+            headers: { ...headersBanco(), ...(options.headers || {}) }
+        });
+
+        const texto = await resposta.text();
+        let dados = null;
+
+        try {
+            dados = texto ? JSON.parse(texto) : null;
+        } catch (_) {
+            dados = texto || null;
+        }
+
+        if (!resposta.ok) {
+            const msg =
+                (dados && typeof dados === "object" && (
+                    dados.message ||
+                    dados.error_description ||
+                    dados.hint ||
+                    dados.error
+                )) ||
+                (typeof dados === "string" ? dados : "") ||
+                `HTTP ${resposta.status}`;
+
+            throw new Error(`Supabase ${resposta.status}: ${msg}`);
+        }
+
+        return dados;
+    } catch (erro) {
+        if (erro instanceof TypeError) {
+            throw new Error(
+                "Não foi possível conectar ao Supabase pelo GitHub Pages. " +
+                "Verifique a URL do projeto, a chave Publishable e as configurações de acesso do Supabase."
+            );
+        }
+        throw erro;
     }
-    return dados;
 }
 
 function registroParaBanco(r) {

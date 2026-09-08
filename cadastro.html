@@ -15391,7 +15391,7 @@ function numeroBanco(valor) {
 }
 
 function registroParaBanco(r) {
-    const pav = calcularPavimento(r.rua);
+    const pav = obterPavimentosDoEndereco(r.rua);
 
     const terra = numeroBanco(pav?.terra);
     const bloquete = numeroBanco(pav?.bloquete);

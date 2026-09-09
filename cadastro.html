@@ -1,9 +1,8 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-<head>
+<head>\n<meta name="application-version" content="Cadastro Zeladoria - sem exclusao de OS pelo usuario - 2026-09-09">
 <meta charset="UTF-8">
 <title>Ordem de Serviço - Zeladoria</title>
-<meta name="application-version" content="Supabase GitHub Pages - corrigido 2026-09-08">
 
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
 
@@ -279,7 +278,7 @@ textarea{ resize:none; }
 <div class="acoes">
     <button type="button" onclick="salvar()">Salvar</button>
      <button type="button" onclick="limparFormulario()">Limpar</button>
-    <button type="button" onclick="apagarUltimo()">Apagar Último</button>
+    
     <button type="button" onclick="exportarExcel()">Exportar Excel</button>
 </div>
 
@@ -15317,7 +15316,6 @@ let editandoId = null;
 function headersBanco() {
     return {
         "apikey": SUPABASE_PUBLISHABLE_KEY,
-        "Authorization": `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
         "Content-Type": "application/json",
         "Accept": "application/json",
         "Prefer": "return=representation"
@@ -15452,41 +15450,18 @@ function bancoParaRegistro(r) {
 
 async function carregarRegistros(silencioso = false) {
     try {
-        const dados = await apiBanco(
-            "ordens_servico?select=*&order=os.asc"
-        );
-
-        registros = Array.isArray(dados)
-            ? dados.map(bancoParaRegistro)
-            : [];
-
+        const dados = await apiBanco("ordens_servico?select=*&order=os.asc");
+        registros = Array.isArray(dados) ? dados.map(bancoParaRegistro) : [];
         atualizar();
-
-        const status = document.getElementById("statusBanco");
-        if (status) {
-            status.textContent = `${registros.length} OS no banco online`;
-            status.style.color = "#21633f";
+        if (!silencioso) {
+            const status = document.getElementById("statusBanco");
+            if (status) status.textContent = `${registros.length} OS no banco online`;
         }
-
-        return registros;
     } catch (erro) {
         console.error("Erro ao consultar Supabase:", erro);
-
         const status = document.getElementById("statusBanco");
-        if (status) {
-            status.textContent = "Erro no banco";
-            status.style.color = "#a52222";
-        }
-
-        if (!silencioso) {
-            alert(
-                "Não foi possível consultar o banco online.\n\n" +
-                erro.message +
-                "\n\nVerifique também as Policies (RLS) da tabela ordens_servico no Supabase."
-            );
-        }
-
-        return [];
+        if (status) status.textContent = "Erro no banco: " + erro.message;
+        if (!silencioso) alert("Não foi possível consultar o banco online.\n\n" + erro.message);
     }
 }
 
@@ -15527,42 +15502,24 @@ function lerFormulario() {
 
 async function salvar() {
     const dado = lerFormulario();
-
-    if (!dado.os) {
-        alert("Informe o Nº da OS.");
-        campoOS.focus();
-        return;
-    }
-
-    if (!dado.tipo) {
-        alert("Selecione o Tipo de Serviço.");
-        campoTipo.focus();
-        return;
-    }
+    if (!dado.os) { alert("Informe o Nº da OS."); campoOS.focus(); return; }
+    if (!dado.tipo) { alert("Selecione o Tipo de Serviço."); campoTipo.focus(); return; }
 
     try {
         const payload = registroParaBanco(dado);
-
         const resultado = await apiBanco("ordens_servico", {
             method: "POST",
             body: JSON.stringify(payload)
         });
-
         const salvo = Array.isArray(resultado) ? resultado[0] : resultado;
-
-        // Reconsulta o banco para garantir que a tela represente exatamente
-        // o que foi gravado no Supabase.
-        await carregarRegistros(true);
-
+        if (salvo) registros.push(bancoParaRegistro(salvo));
+        else await carregarRegistros(true);
         limparFormulario();
-
+        atualizar();
         alert(`OS ${dado.os} salva no banco online.`);
     } catch (erro) {
-        console.error("Erro ao salvar:", erro);
-        alert(
-            "Não foi possível salvar a OS.\n\n" +
-            erro.message
-        );
+        console.error(erro);
+        alert("Não foi possível salvar a OS.\n\n" + erro.message);
     }
 }
 
@@ -15582,7 +15539,6 @@ async function atualizar() {
             <td>${escaparHtml(r.bairro)}</td>
             <td>
                 <button type="button" onclick="editarRegistro('${String(r.id || "").replace(/'/g,"")}')">✏️</button>
-                <button type="button" onclick="removerRegistro('${String(r.id || "").replace(/'/g,"")}')">🗑</button>
             </td>
         `;
         tbody.appendChild(tr);
@@ -15618,26 +15574,17 @@ async function editarRegistro(id) {
     window.scrollTo({top:0, behavior:"smooth"});
 }
 
-async function removerRegistro(id) {
-    const r = registros.find(x => String(x.id) === String(id));
-    if (!r) return;
-    if (!confirm(`Excluir definitivamente a OS ${r.os} do banco online?`)) return;
-
-    try {
-        await apiBanco(`ordens_servico?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
-        await carregarRegistros(true);
-    } catch (erro) {
-        alert("Não foi possível excluir.\n\n" + erro.message);
-    }
+function removerRegistro(id) {
+    alert("A exclusão de OS pelo cadastro está desativada para proteger os dados do banco online.");
 }
 
-async function apagarUltimo() {
-    if (!registros.length) { alert("Não há ordens de serviço."); return; }
-    const ultimo = registros[registros.length - 1];
-    if (!confirm(`Excluir a última OS (${ultimo.os}) do banco online?`)) return;
-    await removerRegistro(ultimo.id);
+function apagarUltimo() {
+    alert("A exclusão de OS pelo cadastro está desativada. Use apenas o botão Limpar para limpar o formulário.");
 }
 
+// IMPORTANTE: LimparFormulario() atua SOMENTE nos campos da tela.
+// Não faz DELETE, PATCH ou qualquer alteração no Supabase.
+// Os registros já salvos no banco permanecem intactos.
 function limparFormulario() {
     [campoOS,campoOficio,campoData,campoSolicitante,campoContato,campoNumero,
      campoResponsavel,campoEquipamento,campoInicio,campoFim,campoDescricao].forEach(c => c.value = "");
@@ -15655,20 +15602,8 @@ function limparFormulario() {
 const salvarOriginal = salvar;
 async function salvarComEdicao() {
     if (!editandoId) return salvarOriginal();
-
     const dado = lerFormulario();
-
-    if (!dado.os) {
-        alert("Informe o Nº da OS.");
-        campoOS.focus();
-        return;
-    }
-
-    if (!dado.tipo) {
-        alert("Selecione o Tipo de Serviço.");
-        campoTipo.focus();
-        return;
-    }
+    if (!dado.os) { alert("Informe o Nº da OS."); return; }
 
     try {
         await apiBanco(`ordens_servico?id=eq.${encodeURIComponent(editandoId)}`, {
@@ -15770,7 +15705,7 @@ function exportarExcel() {
 
 // Carrega o banco ao abrir. Os HTMLs podem continuar somente no laptop.
 carregarRegistros();
-setInterval(() => carregarRegistros(true), 15000);
+setInterval(() => carregarRegistros(true), 10000);
 </script>
 
 </body>

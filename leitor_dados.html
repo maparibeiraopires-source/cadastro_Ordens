@@ -148,13 +148,17 @@ tr:hover td{background:#f8fbf9}
   <div class="section-title">Análise específica — serviços da secretaria</div>
   <section class="panel banner">
     <div class="banner-icon">✓</div>
-    <div><b>Filtro aplicado</b><p>Não contabilizados: <b>Ouro Fino Paulista, Itrapoá, Somma, Casa Vermelha, Pouso Alegre e KM4</b>.</p></div>
+    <div><b>Filtro aplicado</b><p>Não contabilizados: <b>Ouro Fino Paulista, Itrapoá, Somma, Casa Vermelha, Pouso Alegre e KM4</b>. Variações de maiúsculas/minúsculas, acentos e espaços são normalizadas.</p></div>
     <div class="banner-total"><span>OS consideradas</span><strong id="filteredTotal">0</strong></div>
   </section>
   <section class="charts">
     <div class="chart-card"><h3>Tipo de serviço — área atendida</h3><p>Contagem e percentual, excluindo os bairros filtrados</p><div class="chart-wrap"><canvas id="filteredTipoChart"></canvas></div></div>
     <div class="chart-card"><h3>Serviços por bairro — área atendida</h3><p>Contagem e percentual, excluindo os bairros filtrados</p><div class="chart-wrap"><canvas id="filteredBairroChart"></canvas></div></div>
   </section>
+  <section class="charts">
+    <div class="chart-card"><h3>Serviços por ODS — área atendida</h3><p>Quantidade e percentual, excluindo os bairros filtrados</p><div class="chart-wrap"><canvas id="filteredOdsChart"></canvas></div></div>
+  </section>
+  <section class="table-card"><table><thead><tr><th>ODS</th><th>Objetivo</th><th>Quantidade</th><th>%</th><th>Serviços</th></tr></thead><tbody id="filteredOdsBody"></tbody></table></section>
 
   <div class="section-title">Classificação das OS por ODS — total da planilha</div>
   <section class="table-card"><table><thead><tr><th>ODS</th><th>Objetivo</th><th>Quantidade</th><th>Serviços</th></tr></thead><tbody id="odsBody"></tbody></table></section>
@@ -223,16 +227,105 @@ function parseDate(v){
 function monthOf(r){const d=parseDate(getDateValue(r));return d&&d.getFullYear()===2026?d.getMonth()+1:null}
 function dateText(r){const d=parseDate(getDateValue(r));return d?d.toLocaleDateString("pt-BR"):clean(getDateValue(r))}
 function numericOS(v){if(v==null||v==="")return null;let n=Number(String(v).replace(",","."));return Number.isFinite(n)?Math.trunc(n):null}
-function countBy(arr){const map={};arr.forEach(v=>{const k=clean(v)||"Não informado";map[k]=(map[k]||0)+1});return Object.entries(map).sort((a,b)=>b[1]-a[1])}
-function findMissing(values){const nums=values.map(numericOS).filter(n=>n!==null);if(nums.length<2)return[];const min=Math.min(...nums),max=Math.max(...nums),set=new Set(nums),out=[];for(let n=min;n<=max;n++)if(!set.has(n))out.push(n);return out}
-function isExcludedNeighborhood(bairro){
-  const n=normalize(bairro).replace(/[^a-z0-9]+/g," ").trim().replace(/\s+/g," ");
-  if(!n)return false;
-  const compact=n.replace(/\s+/g,"");
-  return BAIRROS_EXCLUIDOS.some(item=>{
-    const e=normalize(item).replace(/[^a-z0-9]+/g," ").trim().replace(/\s+/g," ");
-    return n===e || compact===e.replace(/\s+/g,"");
+function similarityKey(value){
+  return normalize(value)
+    .replace(/[-–—_]+/g," ")
+    .replace(/[\/\\]+/g," ")
+    .replace(/[^A-Z0-9 ]/g," ")
+    .replace(/\s+/g," ")
+    .trim();
+}
+function serviceCanonical(value){
+  const raw=clean(value);
+  const n=similarityKey(raw);
+  if(!n)return "Não informado";
+  const m=n.match(/^(\d+)\s*(.*)$/);
+  if(m){
+    const code=Number(m[1]);
+    const labels={
+      1:"1 - Capinação",
+      2:"2 - Cata Bagulho",
+      3:"3 - Varrição",
+      4:"4 - Poda",
+      5:"5 - Recolha de Capinação",
+      6:"6 - Drenagem",
+      7:"7 - Desassoreamento",
+      8:"8 - Limpeza de Boca de Lobo/Caixa de Leão",
+      9:"9 - Troca de Tampa/Reparo de Gradil",
+      10:"10 - Tapa Buraco",
+      11:"11 - Manutenção/Reparo em Vias",
+      12:"12 - Nivelamento",
+      13:"13 - Remoção de Árvores",
+      14:"14 - Construção",
+      15:"15 - Manutenção/Limpeza de Mobiliário Urbano"
+    };
+    if(labels[code])return labels[code];
+    return `${code} - ${m[2].replace(/\s+/g," ").trim()}`;
+  }
+  // Quando não há código, agrupa variações muito próximas pelo nome.
+  const aliases=[
+    ["CATA BAGULHO","2 - Cata Bagulho"],
+    ["CAPINACAO","1 - Capinação"],
+    ["VARRICAO","3 - Varrição"],
+    ["NIVELAMENTO","12 - Nivelamento"],
+    ["DRENAGEM","6 - Drenagem"],
+    ["DESASSOREAMENTO","7 - Desassoreamento"],
+    ["LIMPEZA DE BOCA DE LOBO","8 - Limpeza de Boca de Lobo/Caixa de Leão"],
+    ["LIMPEZA DE BOCA DE LEAO","8 - Limpeza de Boca de Lobo/Caixa de Leão"],
+    ["TROCA DE TAMPA","9 - Troca de Tampa/Reparo de Gradil"],
+    ["MANUTENCAO REPARO EM VIAS","11 - Manutenção/Reparo em Vias"],
+    ["MANUTENCAO REPARO DE VIAS","11 - Manutenção/Reparo em Vias"],
+    ["MANUTENCAO LIMPEZA DE MOBILIARIO URBANO","15 - Manutenção/Limpeza de Mobiliário Urbano"]
+  ];
+  for(const [needle,label] of aliases)if(n.includes(needle))return label;
+  return raw;
+}
+function bairroCanonical(value){
+  const n=similarityKey(value).replace(/\s+/g,"");
+  if(!n)return "Não informado";
+  const aliases={
+    "OUROFINOPAULISTA":"Ouro Fino Paulista",
+    "OUROFINO":"Ouro Fino Paulista",
+    "ITRAPOA":"Itrapoá",
+    "ITAPOA":"Itrapoá",
+    "SOMMA":"Somma",
+    "CASAVERMELHA":"Casa Vermelha",
+    "POUSOALEGRE":"Pouso Alegre",
+    "KM4":"KM4",
+    "KM04":"KM4",
+    "KM0004":"KM4"
+  };
+  if(aliases[n])return aliases[n];
+  return clean(value)||"Não informado";
+}
+function countBy(arr,mode="exact"){
+  const map={};
+  arr.forEach(v=>{
+    let k=clean(v)||"Não informado";
+    if(mode==="tipo")k=serviceCanonical(v);
+    if(mode==="bairro")k=bairroCanonical(v);
+    map[k]=(map[k]||0)+1;
   });
+  return Object.entries(map).sort((a,b)=>b[1]-a[1]);
+}
+function findMissing(values){const nums=values.map(numericOS).filter(n=>n!==null);if(nums.length<2)return[];const min=Math.min(...nums),max=Math.max(...nums),set=new Set(nums),out=[];for(let n=min;n<=max;n++)if(!set.has(n))out.push(n);return out}
+function bairroKey(value){
+  const n=normalize(value)
+    .replace(/[^a-z0-9]+/g," ")
+    .trim()
+    .replace(/\s+/g," ");
+  if(!n)return "";
+  const compact=n.replace(/\s+/g,"");
+  if(["OURO FINO PAULISTA","OUROFINOPAULISTA"].includes(compact))return "OUROFINOPAULISTA";
+  if(["ITRAPOA","ITAPOA"].includes(compact))return "ITRAPOA";
+  if(compact==="KM4"||compact==="KM04"||compact==="KM0004")return "KM4";
+  return compact;
+}
+function isExcludedNeighborhood(bairro){
+  const key=bairroKey(bairro);
+  if(!key)return false;
+  const excluded=["OUROFINOPAULISTA","ITRAPOA","SOMMA","CASAVERMELHA","POUSOALEGRE","KM4"];
+  return excluded.includes(key);
 }
 function full(v){return normalize([v["COMPLEMENTO DO NOME"],v.NOME].filter(Boolean).join(" "))}
 function compact(s){return normalize(s).replace(/ /g,"")}
@@ -288,25 +381,42 @@ function getRaw(r,kind){
   return "";
 }
 function classifyODS(tipo){
-  const n=normalize(tipo);
-  // Classificação oficial utilizada no controle_ordens_servico_ODS_v3.html
-  if(n.startsWith("2 - cata bagulho")) return "ODS 12";
+  const n=normalize(tipo)
+    .replace(/\s*[-–—]\s*/g,"-")
+    .replace(/\s*\/\s*/g,"/")
+    .replace(/\s+/g," ")
+    .trim();
+  const m=n.match(/^(\d+)\s*-?\s*(.*)$/);
+  const codigo=m?Number(m[1]):null;
+  const nome=m?m[2]:n;
+  // Mesma lógica do controle_ordens_servico_ODS_v3.html,
+  // aceitando também variações como "2 cata bagulho", "2 - Cata Bagulho" etc.
+  if(codigo===2 || nome.startsWith("CATA BAGULHO")) return "ODS 12";
   if(
-    n.startsWith("6 - drenagem") ||
-    n.startsWith("7 - desassoreamento") ||
-    n.startsWith("8 - limpeza de boca de lobo/boca de leao") ||
-    n.startsWith("9 - troca de tampa/ gradil")
+    codigo===6 ||
+    codigo===7 ||
+    codigo===8 ||
+    codigo===9 ||
+    nome.startsWith("DRENAGEM") ||
+    nome.startsWith("DESASSOREAMENTO") ||
+    nome.startsWith("LIMPEZA DE BOCA DE LOBO") ||
+    nome.startsWith("LIMPEZA DE BOCA DE LEAO") ||
+    nome.startsWith("TROCA DE TAMPA")
   ) return "ODS 6";
-  if(n.startsWith("12 - nivelamento")) return "ODS 11";
+  if(codigo===12 || nome.startsWith("NIVELAMENTO")) return "ODS 11";
   if(
-    n.startsWith("11 - manutencao/reparo de vias") ||
-    n.startsWith("15 - manutencao/limpeza de mobiliario urbano")
+    codigo===11 ||
+    codigo===15 ||
+    nome.startsWith("MANUTENCAO/REPARO EM VIAS") ||
+    nome.startsWith("MANUTENCAO/REPARO DE VIAS") ||
+    nome.startsWith("MANUTENCAO/LIMPEZA DE MOBILIARIO URBANO")
   ) return "ODS 15";
   return null;
 }
+
 function chartOptions(){return{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{position:"bottom",labels:{boxWidth:11,padding:8,font:{size:10}}},tooltip:{callbacks:{label:ctx=>{const d=ctx.dataset.data||[],t=d.reduce((a,b)=>a+Number(b||0),0),v=Number(ctx.raw||0);return ` ${ctx.label}: ${v} OS (${t?((v/t)*100).toFixed(1):"0.0"}%)`}}}}}}
 function pie(id,entries){const c=$(id);if(!c)return null;return new Chart(c,{type:"doughnut",data:{labels:entries.map(x=>x[0]),datasets:[{data:entries.map(x=>x[1])}]},options:chartOptions()})}
-function destroy(){Object.values(charts).forEach(c=>c&&c.destroy());charts={origem:null,tipo:null,bairro:null,ods:null,ftipo:null,fbairro:null}}
+function destroy(){Object.values(charts).forEach(c=>c&&c.destroy());charts={origem:null,tipo:null,bairro:null,ods:null,ftipo:null,fbairro:null,fods:null}}
 function rowsForPeriod(){return currentPeriod==="total"?allRows:allRows.filter(r=>monthOf(r)===Number(currentPeriod))}
 function odsServiceValue(r){
   // Usa primeiro o mesmo campo "tipo" que já foi normalizado no processamento
@@ -324,7 +434,7 @@ function renderODS(valid){
     const ods=classifyODS(tipo);
     if(!ods)return;
     map[ods]++;
-    const nome=clean(tipo)||"Não informado";
+    const nome=serviceCanonical(tipo);
     services[ods][nome]=(services[ods][nome]||0)+1;
   });
   const entries=Object.entries(map).filter(([,q])=>q>0).sort((a,b)=>b[1]-a[1]);
@@ -333,6 +443,25 @@ function renderODS(valid){
     const serv=Object.entries(services[ods]||{}).sort((a,b)=>b[1]-a[1]).map(([n,v])=>`${esc(n)} (${v})`).join("<br>");
     return `<tr><td><b>${ods}</b></td><td>${esc(ODS_MAP[ods]?.nome||"")}</td><td>${q}</td><td>${serv}</td></tr>`;
   }).join(""):'<tr><td colspan="4">Nenhum serviço classificado.</td></tr>';
+}
+function renderFilteredODS(valid){
+  const map={"ODS 12":0,"ODS 6":0,"ODS 11":0,"ODS 15":0};
+  const services={"ODS 12":{},"ODS 6":{},"ODS 11":{},"ODS 15":{}};
+  valid.forEach(r=>{
+    const tipo=odsServiceValue(r);
+    const ods=classifyODS(tipo);
+    if(!ods)return;
+    map[ods]++;
+    const nome=serviceCanonical(tipo);
+    services[ods][nome]=(services[ods][nome]||0)+1;
+  });
+  const entries=Object.entries(map).filter(([,q])=>q>0).sort((a,b)=>b[1]-a[1]);
+  charts.fods=pie("filteredOdsChart",entries);
+  $("filteredOdsBody").innerHTML=entries.length?entries.map(([ods,q])=>{
+    const serv=Object.entries(services[ods]||{}).sort((a,b)=>b[1]-a[1]).map(([n,v])=>`${esc(n)} (${v})`).join("<br>");
+    const pct=valid.length?((q/valid.length)*100).toFixed(1)+"%":"0.0%";
+    return `<tr><td><b>${ods}</b></td><td>${esc(ODS_MAP[ods]?.nome||"")}</td><td>${q}</td><td>${pct}</td><td>${serv}</td></tr>`;
+  }).join(""): '<tr><td colspan="5">Nenhum serviço classificado nos bairros considerados.</td></tr>';
 }
 function renderSummary(valid){
   const grupos=[
@@ -360,7 +489,7 @@ function renderPeriod(){
   destroy();
   const rows=rowsForPeriod(),valid=rows.filter(r=>numericOS(r.os)!==null);
   const os=valid.map(r=>r.os),origens=valid.map(r=>getRaw(r,"origem")),tipos=valid.map(r=>getRaw(r,"tipo")),bairros=valid.map(r=>getRaw(r,"bairro"));
-  const origemEntries=countBy(origens),tipoEntries=countBy(tipos),bairroEntries=countBy(bairros),total=valid.length;
+  const origemEntries=countBy(origens),tipoEntries=countBy(tipos,"tipo"),bairroEntries=countBy(bairros,"bairro"),total=valid.length;
   $("periodTitle").textContent=currentPeriod==="total"?"TOTAL DO ANO — 2026":`${MONTH_NAMES[Number(currentPeriod)-1].toUpperCase()} — 2026`;
   $("periodSub").textContent=currentPeriod==="total"?"Consolidação anual de todas as OS válidas.":`Somente OS com data_solicitacao em ${MONTH_NAMES[Number(currentPeriod)-1]}.`;
   $("totalOS").textContent=fmt(total);
@@ -373,10 +502,20 @@ function renderPeriod(){
   $("nivel").textContent=fmt(sumKind("nivel"))+" m";$("cap").textContent=fmt(sumKind("cap"))+" m";$("varr").textContent=fmt(sumKind("varr"))+" m";$("manut").textContent=fmt(sumKind("manut"))+" m";$("cata").textContent=fmt(sumKind("cata"),1)+" t";
   const missing=findMissing(os);$("missingCount").textContent=missing.length;$("missingCount2").textContent=missing.length;$("missingList").innerHTML=missing.length?missing.map(n=>`<span class="tag">${n}</span>`).join(""):'<span class="no-missing">Nenhum número faltante na sequência encontrada.</span>';
   charts.origem=pie("origemChart",origemEntries);charts.tipo=pie("tipoChart",tipoEntries);charts.bairro=pie("bairroChart",bairroEntries);renderODS(valid);renderSummary(valid);
+  // ANÁLISE ESPECÍFICA DA SECRETARIA: exclui os bairros pela coluna bairro do Supabase.
+  // A comparação é feita por chave normalizada, portanto "OURO FINO PAULISTA",
+  // "Ouro Fino Paulista" e variações de espaços/acentos são tratados como o mesmo bairro.
   const filtered=valid.filter(r=>!isExcludedNeighborhood(getRaw(r,"bairro")));
-  const fTipos=countBy(filtered.map(r=>getRaw(r,"tipo"))),fBairros=countBy(filtered.map(r=>getRaw(r,"bairro")));
-  $("filteredTotal").textContent=fmt(filtered.length);$("comparisonAll").textContent=fmt(total);$("comparisonExcluded").textContent=fmt(total-filtered.length);$("comparisonFiltered").textContent=fmt(filtered.length);$("comparisonRate").textContent=(total?((filtered.length/total)*100).toFixed(1):"0.0")+"%";
-  charts.ftipo=pie("filteredTipoChart",fTipos);charts.fbairro=pie("filteredBairroChart",fBairros);
+  const fTipos=countBy(filtered.map(r=>getRaw(r,"tipo")),"tipo");
+  const fBairros=countBy(filtered.map(r=>getRaw(r,"bairro")),"bairro");
+  $("filteredTotal").textContent=fmt(filtered.length);
+  $("comparisonAll").textContent=fmt(total);
+  $("comparisonExcluded").textContent=fmt(total-filtered.length);
+  $("comparisonFiltered").textContent=fmt(filtered.length);
+  $("comparisonRate").textContent=(total?((filtered.length/total)*100).toFixed(1):"0.0")+"%";
+  charts.ftipo=pie("filteredTipoChart",fTipos);
+  charts.fbairro=pie("filteredBairroChart",fBairros);
+  renderFilteredODS(filtered);
   fillServices(rows);renderDetail(rows);$("dashboard").classList.remove("hidden");
   requestAnimationFrame(()=>{
     Object.values(charts).forEach(c=>{if(c&&typeof c.resize==="function")c.resize();});

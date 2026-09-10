@@ -142,7 +142,7 @@ tr:hover td{background:#f8fbf9}
     <div class="chart-card"><h3>Origem dos serviços</h3><p>Antiga Coluna I • contagem e percentual das OS válidas</p><div class="chart-wrap"><canvas id="origemChart"></canvas></div></div>
     <div class="chart-card"><h3>Tipo de serviço</h3><p>Antiga Coluna J • contagem e percentual das OS válidas</p><div class="chart-wrap"><canvas id="tipoChart"></canvas></div></div>
     <div class="chart-card"><h3>Serviços por bairro</h3><p>Antiga Coluna H • contagem e percentual das OS válidas</p><div class="chart-wrap"><canvas id="bairroChart"></canvas></div></div>
-    <div class="chart-card"><h3>Serviços por ODS</h3><p>Classificação das OS conforme o tipo de serviço</p><div class="chart-wrap"><canvas id="odsChart"></canvas></div></div>
+    <div class="chart-card"><h3>Serviços por ODS</h3><p>Classificação das OS • total da planilha</p><div class="chart-wrap"><canvas id="odsChart"></canvas></div></div>
   </section>
 
   <div class="section-title">Análise específica — serviços da secretaria</div>
@@ -156,7 +156,7 @@ tr:hover td{background:#f8fbf9}
     <div class="chart-card"><h3>Serviços por bairro — área atendida</h3><p>Contagem e percentual, excluindo os bairros filtrados</p><div class="chart-wrap"><canvas id="filteredBairroChart"></canvas></div></div>
   </section>
 
-  <div class="section-title">ODS — quantidade e serviços</div>
+  <div class="section-title">Classificação das OS por ODS — total da planilha</div>
   <section class="table-card"><table><thead><tr><th>ODS</th><th>Objetivo</th><th>Quantidade</th><th>Serviços</th></tr></thead><tbody id="odsBody"></tbody></table></section>
 
   <div class="section-title">Comparativo da análise específica</div>
@@ -225,7 +225,15 @@ function dateText(r){const d=parseDate(getDateValue(r));return d?d.toLocaleDateS
 function numericOS(v){if(v==null||v==="")return null;let n=Number(String(v).replace(",","."));return Number.isFinite(n)?Math.trunc(n):null}
 function countBy(arr){const map={};arr.forEach(v=>{const k=clean(v)||"Não informado";map[k]=(map[k]||0)+1});return Object.entries(map).sort((a,b)=>b[1]-a[1])}
 function findMissing(values){const nums=values.map(numericOS).filter(n=>n!==null);if(nums.length<2)return[];const min=Math.min(...nums),max=Math.max(...nums),set=new Set(nums),out=[];for(let n=min;n<=max;n++)if(!set.has(n))out.push(n);return out}
-function isExcludedNeighborhood(bairro){return BAIRROS_EXCLUIDOS.includes(normalize(bairro).replace(/-/g," "))}
+function isExcludedNeighborhood(bairro){
+  const n=normalize(bairro).replace(/[^a-z0-9]+/g," ").trim().replace(/\s+/g," ");
+  if(!n)return false;
+  const compact=n.replace(/\s+/g,"");
+  return BAIRROS_EXCLUIDOS.some(item=>{
+    const e=normalize(item).replace(/[^a-z0-9]+/g," ").trim().replace(/\s+/g," ");
+    return n===e || compact===e.replace(/\s+/g,"");
+  });
+}
 function full(v){return normalize([v["COMPLEMENTO DO NOME"],v.NOME].filter(Boolean).join(" "))}
 function compact(s){return normalize(s).replace(/ /g,"")}
 function lengthOf(v){let e=num(v["METRAGEM ESCADARIA/VIELA"]);if(e>0)return e;return num(v.TERRA)+num(v.BLOQUETE)+num(v["PARALELEPÍPEDO"]??v.PARALELEPIPEDO)+num(v.ASFALTO)}
@@ -275,33 +283,71 @@ function getRaw(r,kind){
   const row=r.__raw||{};
   if(kind==="origem")return getField(row,["Origem","ORIGEM","origem"],8);
   if(kind==="tipo")return r.svc;
-  if(kind==="bairro")return r.bairroRaw??getField(row,["Bairro","BAIRRO","bairro"],7);
+  if(kind==="bairro")return getField(row,["bairro","Bairro","BAIRRO"],7);
   if(kind==="classificacao")return getField(row,["Classificação","Classificacao","CLASSIFICAÇÃO","CLASSIFICACAO","classificacao","classificação","Classificação das OS"],null);
   return "";
 }
 function classifyODS(tipo){
   const n=normalize(tipo);
-  if(n.startsWith("2 - CATA BAGULHO"))return"ODS 12";
-  if(n.startsWith("6 - DRENAGEM")||n.startsWith("7 - DESASSOREAMENTO")||n.startsWith("8 - LIMPEZA DE BOCA DE LOBO")||n.startsWith("8 - LIMPEZA DE BOCA DE LOBO BOCA DE LEAO")||n.startsWith("9 - TROCA DE TAMPA"))return"ODS 6";
-  if(n.startsWith("12 - NIVELAMENTO"))return"ODS 11";
-  if(n.startsWith("11 - MANUTENCAO/REPARO DE VIAS")||n.startsWith("11 - MANUTENCAO REPARO DE VIAS")||n.startsWith("15 - MANUTENCAO/LIMPEZA DE MOBILIARIO URBANO"))return"ODS 15";
+  // Classificação oficial utilizada no controle_ordens_servico_ODS_v3.html
+  if(n.startsWith("2 - cata bagulho")) return "ODS 12";
+  if(
+    n.startsWith("6 - drenagem") ||
+    n.startsWith("7 - desassoreamento") ||
+    n.startsWith("8 - limpeza de boca de lobo/boca de leao") ||
+    n.startsWith("9 - troca de tampa/ gradil")
+  ) return "ODS 6";
+  if(n.startsWith("12 - nivelamento")) return "ODS 11";
+  if(
+    n.startsWith("11 - manutencao/reparo de vias") ||
+    n.startsWith("15 - manutencao/limpeza de mobiliario urbano")
+  ) return "ODS 15";
   return null;
 }
 function chartOptions(){return{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{position:"bottom",labels:{boxWidth:11,padding:8,font:{size:10}}},tooltip:{callbacks:{label:ctx=>{const d=ctx.dataset.data||[],t=d.reduce((a,b)=>a+Number(b||0),0),v=Number(ctx.raw||0);return ` ${ctx.label}: ${v} OS (${t?((v/t)*100).toFixed(1):"0.0"}%)`}}}}}}
 function pie(id,entries){const c=$(id);if(!c)return null;return new Chart(c,{type:"doughnut",data:{labels:entries.map(x=>x[0]),datasets:[{data:entries.map(x=>x[1])}]},options:chartOptions()})}
 function destroy(){Object.values(charts).forEach(c=>c&&c.destroy());charts={origem:null,tipo:null,bairro:null,ods:null,ftipo:null,fbairro:null}}
 function rowsForPeriod(){return currentPeriod==="total"?allRows:allRows.filter(r=>monthOf(r)===Number(currentPeriod))}
+function odsServiceValue(r){
+  // Usa primeiro o mesmo campo "tipo" que já foi normalizado no processamento
+  // do Supabase. Se não existir, consulta diretamente o registro bruto.
+  const raw=r&&r.__raw?r.__raw:r;
+  return clean(r?.svc) || getField(raw,[
+    "tipo","Tipo","TIPO","Tipo de Serviço","TIPO DE SERVIÇO",
+    "tipo_de_servico","tipo_servico"
+  ],9);
+}
 function renderODS(valid){
-  const map={},services={};
-  valid.forEach(r=>{const ods=classifyODS(r.svc);if(!ods)return;map[ods]=(map[ods]||0)+1;services[ods]??={};const nome=clean(r.svc)||"Não informado";services[ods][nome]=(services[ods][nome]||0)+1});
-  const entries=Object.entries(map).sort((a,b)=>b[1]-a[1]);
+  const map={"ODS 12":0,"ODS 6":0,"ODS 11":0,"ODS 15":0},services={"ODS 12":{},"ODS 6":{},"ODS 11":{},"ODS 15":{}};
+  valid.forEach(r=>{
+    const tipo=odsServiceValue(r);
+    const ods=classifyODS(tipo);
+    if(!ods)return;
+    map[ods]++;
+    const nome=clean(tipo)||"Não informado";
+    services[ods][nome]=(services[ods][nome]||0)+1;
+  });
+  const entries=Object.entries(map).filter(([,q])=>q>0).sort((a,b)=>b[1]-a[1]);
   charts.ods=pie("odsChart",entries);
-  $("odsBody").innerHTML=entries.length?entries.map(([ods,q])=>{const serv=Object.entries(services[ods]||{}).sort((a,b)=>b[1]-a[1]).map(([n,v])=>`${esc(n)} (${v})`).join("<br>");return `<tr><td><b>${ods}</b></td><td>${esc(ODS_MAP[ods]?.nome||"")}</td><td>${q}</td><td>${serv}</td></tr>`}).join(""):'<tr><td colspan="4">Nenhum serviço classificado.</td></tr>';
+  $("odsBody").innerHTML=entries.length?entries.map(([ods,q])=>{
+    const serv=Object.entries(services[ods]||{}).sort((a,b)=>b[1]-a[1]).map(([n,v])=>`${esc(n)} (${v})`).join("<br>");
+    return `<tr><td><b>${ods}</b></td><td>${esc(ODS_MAP[ods]?.nome||"")}</td><td>${q}</td><td>${serv}</td></tr>`;
+  }).join(""):'<tr><td colspan="4">Nenhum serviço classificado.</td></tr>';
 }
 function renderSummary(valid){
-  const grupos=[["Origem",valid.map(r=>getRaw(r,"origem"))],["Tipo de serviço",valid.map(r=>getRaw(r,"tipo"))],["Bairro",valid.map(r=>getRaw(r,"bairro"))],["Classificação das OS",valid.map(r=>getRaw(r,"classificacao"))]];
+  const grupos=[
+    ["Origem",valid.map(r=>getRaw(r,"origem"))],
+    ["Tipo de serviço",valid.map(r=>getRaw(r,"tipo"))],
+    ["Bairro",valid.map(r=>getRaw(r,"bairro"))],
+    ["Classificação das OS",valid.map(r=>classifyODS(odsServiceValue(r))||"Não classificada")]
+  ];
   const resumo=[];
-  grupos.forEach(([cat,arr])=>{const entries=countBy(arr),t=entries.reduce((s,x)=>s+x[1],0);entries.forEach(([item,q])=>resumo.push(`<tr><td>${esc(cat)}</td><td>${esc(item)}</td><td>${q}</td><td>${t?((q/t)*100).toFixed(1):"0.0"}%</td></tr>`))});
+  grupos.forEach(([cat,arr])=>{
+    const entries=countBy(arr),t=entries.reduce((s,x)=>s+x[1],0);
+    entries.forEach(([item,q])=>{
+      resumo.push(`<tr><td>${esc(cat)}</td><td>${esc(item)}</td><td>${q}</td><td>${t?((q/t)*100).toFixed(1):"0.0"}%</td></tr>`);
+    });
+  });
   $("summaryBody").innerHTML=resumo.join("");
 }
 function renderDetail(rows){
@@ -332,28 +378,83 @@ function renderPeriod(){
   $("filteredTotal").textContent=fmt(filtered.length);$("comparisonAll").textContent=fmt(total);$("comparisonExcluded").textContent=fmt(total-filtered.length);$("comparisonFiltered").textContent=fmt(filtered.length);$("comparisonRate").textContent=(total?((filtered.length/total)*100).toFixed(1):"0.0")+"%";
   charts.ftipo=pie("filteredTipoChart",fTipos);charts.fbairro=pie("filteredBairroChart",fBairros);
   fillServices(rows);renderDetail(rows);$("dashboard").classList.remove("hidden");
+  requestAnimationFrame(()=>{
+    Object.values(charts).forEach(c=>{if(c&&typeof c.resize==="function")c.resize();});
+  });
   $("status").innerHTML=`<span class="ok">${currentPeriod==="total"?"TOTAL DO ANO":MONTH_NAMES[Number(currentPeriod)-1]}: ${fmt(total)} OS válidas.</span>`;
 }
 async function loadFromSupabase(){
   const status=$("status"),connection=$("connection"),refresh=$("refreshBtn");
-  refresh.disabled=true;refresh.style.opacity=".65";connection.textContent="● Conectando ao Supabase...";status.textContent="Buscando ordens de serviço...";
+  refresh.disabled=true;refresh.style.opacity=".65";
+  connection.textContent="● Conectando ao Supabase...";
+  status.textContent="Consultando tabela ordens_servico...";
   try{
-    let all=[],offset=0;
+    let all=[];
+    let offset=0;
     while(true){
-      const url=`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?select=*&order=os.asc&limit=${SUPABASE_PAGE_SIZE}&offset=${offset}`;
-      const response=await fetch(url,{method:"GET",headers:{"apikey":SUPABASE_KEY,"Authorization":`Bearer ${SUPABASE_KEY}`,"Accept":"application/json"},cache:"no-store"});
-      const text=await response.text();if(!response.ok)throw new Error(`Supabase HTTP ${response.status}: ${text.slice(0,600)}`);
-      let page;try{page=JSON.parse(text)}catch(e){throw new Error("O Supabase não retornou JSON válido.")}
-      if(!Array.isArray(page))throw new Error("A tabela ordens_servico não retornou uma lista.");
-      all=all.concat(page);if(page.length<SUPABASE_PAGE_SIZE)break;offset+=SUPABASE_PAGE_SIZE;
+      const url=`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?select=*&limit=${SUPABASE_PAGE_SIZE}&offset=${offset}`;
+      const response=await fetch(url,{
+        method:"GET",
+        headers:{
+          "apikey":SUPABASE_KEY,
+          "Authorization":`Bearer ${SUPABASE_KEY}`,
+          "Accept":"application/json",
+          "Content-Type":"application/json"
+        },
+        cache:"no-store"
+      });
+      const text=await response.text();
+      if(!response.ok){
+        let detail=text;
+        try{const j=JSON.parse(text);detail=j.message||j.error_description||j.hint||text;}catch(e){}
+        throw new Error(`Supabase HTTP ${response.status}: ${detail}`);
+      }
+      let page;
+      try{page=text?JSON.parse(text):[];}catch(e){throw new Error("Resposta do Supabase não é JSON válido: "+text.slice(0,300));}
+      if(!Array.isArray(page))throw new Error("A tabela ordens_servico não retornou uma lista de registros.");
+      all=all.concat(page);
+      if(page.length<SUPABASE_PAGE_SIZE)break;
+      offset+=SUPABASE_PAGE_SIZE;
     }
-    const rows2026=all.filter(r=>{const d=parseDate(getDateValue(r));return d&&d.getFullYear()===2026});
-    allRows=processRows(rows2026);currentPeriod="total";$("period").value="total";renderPeriod();
+
+    if(!all.length){
+      connection.innerHTML='<span class="warn">● Supabase conectado, mas sem registros</span>';
+      status.innerHTML='<span class="warn">A conexão funcionou, porém a tabela ordens_servico retornou 0 registros. Verifique os dados e as políticas RLS.</span>';
+      allRows=[];
+      currentPeriod="total";
+      $("period").value="total";
+      renderPeriod();
+      return;
+    }
+
+    const rows2026=all.filter(r=>{
+      const d=parseDate(getDateValue(r));
+      return d&&d.getFullYear()===2026;
+    });
+
+    allRows=processRows(rows2026).map((x,i)=>{
+      x.__raw=rows2026[i]||{};
+      x.bairroRaw=getField(x.__raw,["bairro","Bairro","BAIRRO"],7);
+      return x;
+    });
+
+    currentPeriod="total";
+    $("period").value="total";
+    renderPeriod();
+
     const agora=new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
-    connection.innerHTML=`<span class="ok">● Supabase conectado</span> • ${fmt(all.length)} registros • ${fmt(allRows.length)} OS de 2026 • ${agora}`;
-    status.innerHTML=`<span class="ok">Dados carregados diretamente do banco.</span>`;
-  }catch(err){console.error(err);connection.innerHTML='<span class="bad">● Erro ao conectar ao Supabase</span>';status.innerHTML=`<span class="bad">ERRO: ${esc(err?.message||err)}</span>`;allRows=[];$("dashboard").classList.add("hidden")}
-  finally{refresh.disabled=false;refresh.style.opacity="1"}
+    connection.innerHTML=`<span class="ok">● Supabase conectado</span> • ${fmt(all.length)} registros no banco • ${fmt(allRows.length)} OS de 2026 • ${agora}`;
+    status.innerHTML=`<span class="ok">Dados carregados diretamente do Supabase.</span>`;
+  }catch(err){
+    console.error("ERRO SUPABASE:",err);
+    connection.innerHTML='<span class="bad">● Erro ao conectar ao Supabase</span>';
+    status.innerHTML=`<span class="bad">${esc(err?.message||err)}</span>`;
+    allRows=[];
+    $("dashboard").classList.add("hidden");
+  }finally{
+    refresh.disabled=false;
+    refresh.style.opacity="1";
+  }
 }
 $("period").onchange=()=>{currentPeriod=$("period").value;renderPeriod()};
 $("refreshBtn").onclick=loadFromSupabase;
